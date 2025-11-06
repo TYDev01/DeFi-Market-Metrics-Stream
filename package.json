@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@somnia-chain/streams": "^0.9.5",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.20.6",
+    "viem": "^2.37.13"
+  }
+}

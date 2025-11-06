@@ -1,0 +1,25 @@
+# Node
+node_modules/
+dist/
+.next/
+out/
+
+# Env
+.env
+.env.local
+.env.production
+.env.development
+
+# Foundry
+contracts/lib
+contracts/out
+contracts/cache
+contracts/.env
+contracts/broadcast
+
+# Misc
+*.log
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+newd.md

@@ -24,19 +24,14 @@ contract MetricsUpdater is AutomationCompatibleInterface {
     struct PoolConfig {
         address baseFeed;
         address quoteFeed;
-        uint256 baseLiquidity; // token amount scaled by 1e18
-        uint256 quoteLiquidity; // token amount scaled by 1e18
-        uint16 feeBps; // trading fee in basis points used for fee estimation
+        uint256 baseLiquidity;
+        uint256 quoteLiquidity;
+        uint16 feeBps;
         string protocol;
         string network;
         string poolId;
         string baseToken;
         string quoteToken;
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "MetricsUpdater: zero addr");
-        owner = newOwner;
     }
 
     struct PoolState {
@@ -73,15 +68,25 @@ contract MetricsUpdater is AutomationCompatibleInterface {
         _;
     }
 
-    constructor(ISomniaStreamWriter _somniaStream, bytes32 _schemaId, PoolConfig[] memory configs) {
+    constructor(ISomniaStreamWriter _somniaStream, bytes32 _schemaId) {
         owner = msg.sender;
         somniaStream = _somniaStream;
         schemaId = _schemaId;
         lastUpkeepTimestamp = uint64(block.timestamp);
+    }
+
+    /// @notice one-time initializer to register initial pools after deployment
+    function initPools(PoolConfig[] calldata configs) external onlyOwner {
+        require(poolKeys.length == 0, "MetricsUpdater: already initialized");
 
         for (uint256 i = 0; i < configs.length; i++) {
             _registerPool(configs[i]);
         }
+    }
+
+    function transferOwnership(address newOwner) external onlyOwner {
+        require(newOwner != address(0), "MetricsUpdater: zero addr");
+        owner = newOwner;
     }
 
     function registerPool(PoolConfig calldata config) external onlyOwner {
@@ -100,10 +105,14 @@ contract MetricsUpdater is AutomationCompatibleInterface {
         _registerPool(copy);
     }
 
-    function updatePool(address baseFeed, address quoteFeed, uint256 baseLiquidity, uint256 quoteLiquidity, uint16 feeBps, bytes32 poolKey)
-        external
-        onlyOwner
-    {
+    function updatePool(
+        address baseFeed,
+        address quoteFeed,
+        uint256 baseLiquidity,
+        uint256 quoteLiquidity,
+        uint16 feeBps,
+        bytes32 poolKey
+    ) external onlyOwner {
         PoolConfig storage stored = poolConfigs[poolKey];
         require(bytes(stored.protocol).length != 0, "MetricsUpdater: pool missing");
 
@@ -137,7 +146,12 @@ contract MetricsUpdater is AutomationCompatibleInterface {
         state = poolStates[poolKey];
     }
 
-    function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes memory performData) {
+    function checkUpkeep(bytes calldata)
+        external
+        view
+        override
+        returns (bool upkeepNeeded, bytes memory performData)
+    {
         upkeepNeeded = block.timestamp >= (lastUpkeepTimestamp + interval);
         performData = bytes("");
     }
@@ -186,13 +200,14 @@ contract MetricsUpdater is AutomationCompatibleInterface {
         }
     }
 
-    function _computeAprBps(uint256 previousTvl, uint256 tvlUsd, uint64 lastTimestamp, uint16 feeBps)
-        internal
-        view
-        returns (int256)
-    {
+    function _computeAprBps(
+        uint256 previousTvl,
+        uint256 tvlUsd,
+        uint64 lastTimestamp,
+        uint16 feeBps
+    ) internal view returns (int256) {
         if (previousTvl == 0 || lastTimestamp == 0) {
-            return int256(uint256(feeBps) * 365); // simple bootstrap estimate
+            return int256(uint256(feeBps) * 365);
         }
 
         uint256 elapsed = block.timestamp - lastTimestamp;
@@ -257,19 +272,19 @@ contract MetricsUpdater is AutomationCompatibleInterface {
         return a >= b ? a - b : b - a;
     }
 
-    function _computeDataKey(string memory protocol, string memory network, string memory poolId)
-        internal
-        pure
-        returns (bytes32)
-    {
+    function _computeDataKey(
+        string memory protocol,
+        string memory network,
+        string memory poolId
+    ) internal pure returns (bytes32) {
         return keccak256(abi.encodePacked(protocol, ":", network, ":", poolId));
     }
 
-    function computeDataKey(string calldata protocol, string calldata network, string calldata poolId)
-        external
-        pure
-        returns (bytes32)
-    {
+    function computeDataKey(
+        string calldata protocol,
+        string calldata network,
+        string calldata poolId
+    ) external pure returns (bytes32) {
         return _computeDataKey(protocol, network, poolId);
     }
 }

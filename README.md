@@ -25,7 +25,7 @@ Key contract: `src/MetricsUpdater.sol`
 
 ```bash
 cd contracts
-forge install foundry-rs/forge-std --no-commit
+forge install foundry-rs/forge-std
 ```
 
 Update `foundry.toml` with `SOMNIA_RPC_URL`, then run:
@@ -33,11 +33,10 @@ Update `foundry.toml` with `SOMNIA_RPC_URL`, then run:
 ```bash
 forge test
 forge script script/Deploy.s.sol --rpc-url $SOMNIA_RPC_URL --broadcast
-
-forge script script/Deploy.s.sol --rpc-url $SOMNIA_RPC_URL --private-key $PRIVATE_KEY --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY -vvvv
+forge script script/InitPools.s.sol --rpc-url $SOMNIA_RPC_URL --broadcast
 ```
 
-Populate environment variables for the deploy script (`OWNER_ADDRESS`, `SOMNIA_STREAM_WRITER`, `SOMNIA_SCHEMA_ID`, `POOL0_*` etc.).
+Populate environment variables for the deployment script (`OWNER_ADDRESS`, `SOMNIA_STREAM_WRITER`, `SOMNIA_SCHEMA_ID`) and for initialisation (`METRICS_UPDATER_ADDRESS`, `POOL_COUNT`, `POOL0_*`, ...). Use `forge script ... --legacy --gas-limit 7000000 --slow` if you hit gas-estimation issues on mainnet-like networks.
 
 ## Dashboard (`dashboard/`)
 
@@ -52,7 +51,7 @@ Next.js App Router + shadcn styling + viem RPC client.
 Copy `.env.example` (below) to `.env.local` and fill values:
 
 ```
-SOMNIA_RPC_URL=https://rpc.somnia.network
+SOMNIA_RPC_URL=https://dream-rpc.somnia.network
 SOMNIA_STREAM_ADDRESS=0x...
 SOMNIA_SCHEMA_ID=0x...
 ```
@@ -76,7 +75,7 @@ npm run dev
 
 ```
 TELEGRAM_BOT_TOKEN=123456:ABC
-SOMNIA_RPC_URL=https://rpc.somnia.network
+SOMNIA_RPC_URL=https://dream-rpc.somnia.network
 SOMNIA_STREAM_ADDRESS=0x...
 SOMNIA_SCHEMA_ID=0x...
 POLL_INTERVAL_MS=300000

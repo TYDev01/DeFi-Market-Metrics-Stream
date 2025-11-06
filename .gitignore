@@ -15,7 +15,6 @@ contracts/lib
 contracts/out
 contracts/cache
 contracts/.env
-contracts/broadcast
 
 # Misc
 *.log

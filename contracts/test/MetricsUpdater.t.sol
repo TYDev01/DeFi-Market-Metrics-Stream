@@ -72,7 +72,8 @@ contract MetricsUpdaterTest is Test {
             quoteToken: "USD"
         });
 
-        updater = new MetricsUpdater(ISomniaStreamWriter(somnia), SCHEMA_ID, configs);
+        updater = new MetricsUpdater(ISomniaStreamWriter(somnia), SCHEMA_ID);
+        updater.initPools(configs);
         updater.setInterval(60);
         vm.warp(block.timestamp + 120);
     }

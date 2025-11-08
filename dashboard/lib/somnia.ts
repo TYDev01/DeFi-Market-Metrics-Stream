@@ -42,9 +42,8 @@ const DEFAULT_POOLS = [
 ] satisfies Array<Pick<DefiMetric, "protocol" | "network" | "poolId" | "baseToken" | "quoteToken">>;
 
 function computeDataKey(protocol: string, network: string, poolId: string): Hex {
-  return keccak256(
-    encodePacked(["string", "string", "string"], [protocol, network, poolId])
-  );
+  const composite = `${protocol}:${network}:${poolId}`;
+  return keccak256(encodePacked(["string"], [composite]));
 }
 
 function getFallbackMetrics(): DefiMetric[] {

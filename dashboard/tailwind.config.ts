@@ -15,6 +15,18 @@ const config: Config = {
           muted: "#f5f5ff"
         }
       },
+      fontFamily: {
+        sans: [
+          "Inter",
+          "Segoe UI",
+          "system-ui",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif"
+        ]
+      },
       boxShadow: {
         soft: "0 10px 30px rgba(71, 49, 255, 0.12)"
       }

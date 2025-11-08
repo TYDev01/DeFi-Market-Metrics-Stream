@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import FilterBar from "./filter-bar";
 import MetricsTable, { SortState } from "./metrics-table";
@@ -13,6 +13,9 @@ import { formatApr, formatUsd } from "@/lib/utils";
 interface MetricsDashboardProps {
   initialMetrics: DefiMetric[];
 }
+
+const AUTO_REFRESH_INTERVAL_MS = Number(process.env.NEXT_PUBLIC_REFRESH_INTERVAL_MS ?? 60_000);
+const SHOULD_AUTO_REFRESH = Number.isFinite(AUTO_REFRESH_INTERVAL_MS) && AUTO_REFRESH_INTERVAL_MS > 0;
 
 export default function MetricsDashboard({ initialMetrics }: MetricsDashboardProps) {
   const router = useRouter();
@@ -95,6 +98,18 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
     router.refresh();
   };
 
+  useEffect(() => {
+    if (!SHOULD_AUTO_REFRESH) {
+      return;
+    }
+
+    const id = window.setInterval(() => {
+      router.refresh();
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(id);
+  }, [router]);
+
   const handleSubscribe = () => {
     const url = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ?? "https://t.me/somnia_alerts_bot";
     window.open(url, "_blank", "noopener,noreferrer");
@@ -120,7 +135,10 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
           <Button variant="outline" onClick={handleRefresh}>
             Refresh Dashboard
           </Button>
-          <span className="text-xs text-slate-500">Last update: {latestUpdate}</span>
+          <span className="text-xs text-slate-500">
+            Last update: {latestUpdate}
+            {SHOULD_AUTO_REFRESH ? ` · Auto refresh ${Math.round(AUTO_REFRESH_INTERVAL_MS / 1000)}s` : ""}
+          </span>
         </div>
       </section>
 

@@ -10,9 +10,10 @@ const config: Config = {
     extend: {
       colors: {
         somnia: {
-          primary: "#4731ff",
-          surface: "#ffffff",
-          muted: "#f5f5ff"
+          primary: "#2590e2",
+          surface: "#060819",
+          muted: "#101223",
+          card: "#18192b"
         }
       },
       fontFamily: {
@@ -28,7 +29,7 @@ const config: Config = {
         ]
       },
       boxShadow: {
-        soft: "0 10px 30px rgba(71, 49, 255, 0.12)"
+        soft: "0 10px 40px rgba(3, 150, 253, 0.2)"
       }
     }
   },

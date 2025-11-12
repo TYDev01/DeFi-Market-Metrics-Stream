@@ -1,31 +1,29 @@
 export type MetricField =
-  | "protocol"
-  | "network"
-  | "poolId"
+  | "pairId"
   | "baseToken"
   | "quoteToken"
-  | "tvlUsd"
-  | "volume24hUsd"
-  | "fees24hUsd"
-  | "aprBps"
+  | "source"
+  | "price"
+  | "priceDelta"
+  | "priceDeltaPercent"
   | "timestamp";
 
-export interface DefiMetric {
+export interface PriceMetric {
   timestamp: number;
-  protocol: string;
-  network: string;
-  poolId: string;
   baseToken: string;
   quoteToken: string;
-  tvlUsd: number;
-  volume24hUsd: number;
-  fees24hUsd: number;
-  aprBps: number;
+  baseAddress: `0x${string}`;
+  quoteAddress: `0x${string}`;
+  pairId: string;
+  source: string;
+  price: number;
+  priceDelta: number;
+  priceDeltaPercent: number;
+  priceFeed: string;
 }
 
 export interface FilterState {
   search: string;
-  protocol: string;
-  network: string;
-  minAprPercent: number;
+  source: string;
+  minChangePercent: number;
 }

@@ -2,8 +2,7 @@
 pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
-
-import { MetricsUpdater, ISomniaStreamWriter, AggregatorV3Interface } from "../src/MetricsUpdater.sol";
+import {MetricsUpdater, ISomniaStreamWriter, AggregatorV3Interface} from "../src/MetricsUpdater.sol";
 
 contract MockAggregator is AggregatorV3Interface {
     uint8 public override decimals;
@@ -48,53 +47,115 @@ contract MockSomniaStream is ISomniaStreamWriter {
 contract MetricsUpdaterTest is Test {
     MetricsUpdater private updater;
     MockSomniaStream private somnia;
-    MockAggregator private baseFeed;
-    MockAggregator private quoteFeed;
+    MockAggregator private feed;
 
     bytes32 private constant SCHEMA_ID = bytes32(uint256(0x1234));
+    address private constant BASE_TOKEN = address(0xBEEF);
+    address private constant QUOTE_TOKEN = address(0xCAFE);
+    bytes32 private pairKey;
 
     function setUp() public {
         somnia = new MockSomniaStream();
-        baseFeed = new MockAggregator(8, 2000e8); // 2000 USD
-        quoteFeed = new MockAggregator(8, 1000e8); // 1000 USD
+        feed = new MockAggregator(8, 2_000e8);
 
-        MetricsUpdater.PoolConfig[] memory configs = new MetricsUpdater.PoolConfig[](1);
-        configs[0] = MetricsUpdater.PoolConfig({
-            baseFeed: address(baseFeed),
-            quoteFeed: address(quoteFeed),
-            baseLiquidity: 1_000e18,
-            quoteLiquidity: 500e18,
-            feeBps: 30,
-            protocol: "SomniaSwap",
-            network: "Somnia",
-            poolId: "ETH-USD",
-            baseToken: "ETH",
-            quoteToken: "USD"
+        MetricsUpdater.PairInput[] memory inputs = new MetricsUpdater.PairInput[](1);
+        inputs[0] = MetricsUpdater.PairInput({
+            priceFeed: address(feed),
+            baseToken: BASE_TOKEN,
+            quoteToken: QUOTE_TOKEN,
+            baseSymbol: "SOM",
+            quoteSymbol: "USDT",
+            pairId: "SOM-USDT",
+            source: "Chainlink"
         });
 
         updater = new MetricsUpdater(ISomniaStreamWriter(somnia), SCHEMA_ID);
-        updater.initPools(configs);
+        updater.initPairs(inputs);
         updater.setInterval(60);
+
+        pairKey = updater.computePairKey(BASE_TOKEN, QUOTE_TOKEN, "SOM-USDT");
+
         vm.warp(block.timestamp + 120);
     }
 
-    function testPerformUpkeepWritesToSomnia() public {
+    function testPerformUpkeepEncodesPairData() public {
         (bool upkeep,) = updater.checkUpkeep("");
         assertTrue(upkeep, "upkeep required");
 
         updater.performUpkeep("");
 
         assertEq(somnia.writeCount(), 1, "write count");
-        assertEq(somnia.schemaId(), SCHEMA_ID, "schema");
+        assertEq(somnia.lastDataKey(), pairKey, "pair key");
 
-        (MetricsUpdater.PoolConfig memory config,) =
-            updater.getPool(updater.computeDataKey("SomniaSwap", "Somnia", "ETH-USD"));
-        assertEq(config.baseToken, "ETH");
+        (
+            uint64 timestamp,
+            string memory baseSymbol,
+            string memory quoteSymbol,
+            string memory pairId,
+            string memory source,
+            uint256 price,
+            int256 delta,
+            int256 deltaBps,
+            address priceFeed,
+            uint8 decimals,
+            address baseToken,
+            address quoteToken
+        ) = abi.decode(
+            somnia.lastEncodedData(),
+            (uint64, string, string, string, string, uint256, int256, int256, address, uint8, address, address)
+        );
+
+        assertEq(baseSymbol, "SOM");
+        assertEq(quoteSymbol, "USDT");
+        assertEq(pairId, "SOM-USDT");
+        assertEq(source, "Chainlink");
+        assertEq(priceFeed, address(feed));
+        assertEq(decimals, 8);
+        assertEq(baseToken, BASE_TOKEN);
+        assertEq(quoteToken, QUOTE_TOKEN);
+        assertEq(price, uint256(2_000e8));
+        assertEq(delta, 0);
+        assertEq(deltaBps, 0);
+        assertGt(timestamp, 0);
+    }
+
+    function testPriceChangeCalculations() public {
+        updater.performUpkeep("");
+
+        vm.warp(block.timestamp + 120);
+        feed.setAnswer(2_100e8);
+
+        updater.performUpkeep("");
+
+        (, MetricsUpdater.PairState memory state) = updater.getPair(pairKey);
+        assertEq(state.lastPrice, uint256(2_100e8));
+        assertEq(state.lastChangeBps, int256(500));
+    }
+
+    function testUpdatePairRequiresMatchingId() public {
+        MetricsUpdater.PairInput memory input = MetricsUpdater.PairInput({
+            priceFeed: address(feed),
+            baseToken: BASE_TOKEN,
+            quoteToken: QUOTE_TOKEN,
+            baseSymbol: "SOM",
+            quoteSymbol: "USDT",
+            pairId: "SOM-USDT",
+            source: "Manual"
+        });
+
+        updater.updatePair(pairKey, input);
+
+        (, MetricsUpdater.PairState memory stateBefore) = updater.getPair(pairKey);
+        assertEq(stateBefore.lastPrice, 0);
+
+        vm.expectRevert("MetricsUpdater: pair id mismatch");
+        input.pairId = "DIFF";
+        updater.updatePair(pairKey, input);
     }
 
     function testIntervalsRespected() public {
         updater.performUpkeep("");
-        vm.expectRevert();
+        vm.expectRevert("MetricsUpdater: upkeep not due");
         updater.performUpkeep("");
     }
 }

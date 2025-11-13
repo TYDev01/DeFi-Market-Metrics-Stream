@@ -4,6 +4,7 @@ import pino from "pino";
 import { Hex } from "viem";
 import { fetchMetricsFromSomnia, SomniaMetric } from "./somnia.js";
 import { SubscriptionStore, Subscription } from "./store.js";
+import { TRACKED_PAIRS } from "../../shared/pairs.js";
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
@@ -20,45 +21,43 @@ if (!rpcUrl || !streamAddress || !schemaId) {
   logger.warn("Somnia environment variables missing, bot will operate in dry-run mode.");
 }
 
-const DEFAULT_POOLS = [
-  { protocol: "SomniaSwap", network: "Somnia", poolId: "ETH-USD", baseToken: "ETH", quoteToken: "USD" },
-  { protocol: "SomniaLend", network: "Somnia", poolId: "sETH", baseToken: "sETH", quoteToken: "USD" },
-  { protocol: "SomniaYield", network: "Somnia", poolId: "Vault-01", baseToken: "ETH", quoteToken: "stETH" }
-];
-
 type MetricCache = Map<string, SomniaMetric>;
 
 const cache: MetricCache = new Map();
 const store = new SubscriptionStore();
 const bot = new TelegramBot(token, { polling: true });
+const trackedPairs = TRACKED_PAIRS;
+
+if (!trackedPairs.length) {
+  logger.warn("TRACKED_PAIRS is empty; the bot will not produce alerts until you configure shared/pairs.js.");
+}
 
 bot.setMyCommands([
-  { command: "start", description: "Subscribe to Somnia alerts" },
-  { command: "subscribe", description: "Follow specific protocols (/subscribe SomniaSwap)" },
-  { command: "setthreshold", description: "Change alert threshold (/setthreshold 10)" },
+  { command: "start", description: "Subscribe to Somnia price alerts" },
+  { command: "subscribe", description: "Follow specific pairs (/subscribe SOM-USDT)" },
+  { command: "setthreshold", description: "Change alert threshold (/setthreshold 3)" },
   { command: "stop", description: "Unsubscribe from updates" }
 ]);
 
-function formatBigUsd(value: bigint): string {
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return `$${value.toString()}`;
-  }
-  if (numeric >= 1_000_000_000) {
-    return `$${(numeric / 1_000_000_000).toFixed(2)}B`;
-  }
-  if (numeric >= 1_000_000) {
-    return `$${(numeric / 1_000_000).toFixed(2)}M`;
-  }
-  if (numeric >= 10_000) {
-    return `$${(numeric / 1_000).toFixed(1)}K`;
-  }
-  return `$${numeric.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+function formatDecimal(value: bigint, decimals: number): number {
+  if (decimals <= 0) return Number(value);
+  const safeDecimals = Math.min(decimals, 18);
+  const scale = Number(10n ** BigInt(safeDecimals));
+  return Number(value) / scale;
 }
 
-function formatApr(aprBps: bigint): string {
-  const numeric = Number(aprBps);
-  return `${(numeric / 100).toFixed(2)}%`;
+function formatPrice(amount: bigint, decimals: number, quoteToken: string): string {
+  const numeric = formatDecimal(amount, decimals);
+  const fractionDigits = numeric >= 1 ? 4 : 6;
+  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: fractionDigits })} ${quoteToken}`;
+}
+
+function formatDelta(amount: bigint, decimals: number, quoteToken: string): string {
+  const numeric = formatDecimal(amount, decimals);
+  const sign = numeric >= 0 ? "+" : "-";
+  const absValue = Math.abs(numeric);
+  const fractionDigits = absValue >= 1 ? 4 : 6;
+  return `${sign}${absValue.toLocaleString(undefined, { maximumFractionDigits: fractionDigits })} ${quoteToken}`;
 }
 
 function percentChange(current: bigint, previous: bigint): number {
@@ -68,24 +67,22 @@ function percentChange(current: bigint, previous: bigint): number {
   return (diff / base) * 100;
 }
 
-function formatMetricLine(metric: SomniaMetric, change: number) {
-  const direction = change >= 0 ? "▲" : "▼";
-  const changeText = `${direction} ${change.toFixed(2)}%`;
+function formatMetricLine(metric: SomniaMetric, changePercent: number) {
+  const direction = changePercent >= 0 ? "▲" : "▼";
+  const changeText = `${direction} ${Math.abs(changePercent).toFixed(2)}%`;
 
   return [
-    `🚨 *${metric.protocol}* (${metric.poolId}) alert`,
-    `Change: *${changeText}*`,
-    `TVL: ${formatBigUsd(metric.tvlUsd)}`,
-    `24h Volume: ${formatBigUsd(metric.volume24hUsd)}`,
-    `24h Fees: ${formatBigUsd(metric.fees24hUsd)}`,
-    `APR: ${formatApr(metric.aprBps)}`
+    ` *${metric.pairId}* (${metric.source})`,
+    `Change: *${changeText}* (${formatDelta(metric.priceDelta, metric.decimals, metric.quoteToken)})`,
+    `Price: ${formatPrice(metric.price, metric.decimals, metric.quoteToken)}`,
+    `Updated at: ${new Date(metric.timestamp * 1000).toLocaleTimeString()}`
   ].join("\n");
 }
 
 async function getOrCreateSubscription(chatId: number): Promise<Subscription> {
   const existing = await store.get(chatId);
   if (existing) return existing;
-  const fallback: Subscription = { protocols: [], threshold: 5 };
+  const fallback: Subscription = { pairs: [], threshold: 5 };
   await store.set(chatId, fallback);
   return fallback;
 }
@@ -95,15 +92,15 @@ bot.onText(/\/start/, async (msg) => {
   const subscription = await getOrCreateSubscription(chatId);
 
   const text = [
-    "👋 Welcome to the Somnia DeFi Alerts bot!",
+    " Welcome to the Somnia price alert bot!",
     "",
     `Current threshold: ${subscription.threshold}%`,
-    subscription.protocols.length
-      ? `Tracking protocols: ${subscription.protocols.join(", ")}`
-      : "Tracking all supported protocols.",
+    subscription.pairs.length
+      ? `Tracking pairs: ${subscription.pairs.join(", ")}`
+      : "Tracking all configured pairs.",
     "",
     "Commands:",
-    "• /subscribe <protocol>[,<protocol>...]",
+    "• /subscribe <pair>[,<pair>...] (example: /subscribe SOM-USDT,ETH-USD)",
     "• /setthreshold <percent>",
     "• /stop"
   ].join("\n");
@@ -113,28 +110,47 @@ bot.onText(/\/start/, async (msg) => {
 
 bot.onText(/\/subscribe(?:\s+(.+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
-  const protocolInput = (match?.[1] ?? "").trim();
+  const pairInput = (match?.[1] ?? "").trim();
   const subscription = await getOrCreateSubscription(chatId);
 
-  if (!protocolInput.length) {
-    subscription.protocols = [];
-    await store.set(chatId, subscription);
-    await bot.sendMessage(chatId, "You will receive alerts for all protocols.");
+  if (!trackedPairs.length) {
+    await bot.sendMessage(chatId, "No tracked pairs are configured yet. Update shared/pairs.js to enable subscriptions.");
     return;
   }
 
-  const requested = protocolInput.split(/[,\s]+/).filter(Boolean);
-  const available = new Set(DEFAULT_POOLS.map((pool) => pool.protocol));
-  const invalid = requested.filter((protocol) => !available.has(protocol));
+  if (!pairInput.length) {
+    subscription.pairs = [];
+    await store.set(chatId, subscription);
+    await bot.sendMessage(chatId, "You will receive alerts for all pairs.");
+    return;
+  }
+
+  const requested = pairInput.split(/[,\s]+/).filter(Boolean);
+  const available = new Map(trackedPairs.map((pair) => [pair.pairId.toLowerCase(), pair.pairId]));
+
+  const resolved: string[] = [];
+  const invalid: string[] = [];
+
+  for (const candidate of requested) {
+    const key = candidate.toLowerCase();
+    if (available.has(key)) {
+      resolved.push(available.get(key)!);
+    } else {
+      invalid.push(candidate);
+    }
+  }
 
   if (invalid.length) {
-    await bot.sendMessage(chatId, `Unknown protocols: ${invalid.join(", ")}. Available: ${Array.from(available).join(", ")}`);
+    await bot.sendMessage(
+      chatId,
+      `Unknown pairs: ${invalid.join(", ")}. Available: ${trackedPairs.map((pair) => pair.pairId).join(", ")}`
+    );
     return;
   }
 
-  subscription.protocols = Array.from(new Set(requested));
+  subscription.pairs = Array.from(new Set(resolved));
   await store.set(chatId, subscription);
-  await bot.sendMessage(chatId, `Updated subscriptions: ${subscription.protocols.join(", ")}`);
+  await bot.sendMessage(chatId, `Updated subscriptions: ${subscription.pairs.join(", ")}`);
 });
 
 bot.onText(/\/setthreshold\s+(\d+)/, async (msg, match) => {
@@ -159,41 +175,40 @@ bot.onText(/\/stop/, async (msg) => {
 });
 
 async function pollAndNotify() {
-  if (!rpcUrl || !streamAddress || !schemaId) {
+  if (!rpcUrl || !streamAddress || !schemaId || !trackedPairs.length) {
     return;
   }
 
   try {
-    const metrics = await fetchMetricsFromSomnia(rpcUrl, streamAddress, schemaId, DEFAULT_POOLS);
+    const metrics = await fetchMetricsFromSomnia(rpcUrl, streamAddress, schemaId, trackedPairs);
     logger.info({ count: metrics.length }, "Fetched Somnia metrics");
 
     for (const metric of metrics) {
-      const key = `${metric.protocol}:${metric.poolId}`;
+      const key = metric.pairId;
       const previous = cache.get(key);
+      let change = metric.priceDeltaPercent;
 
-      if (previous) {
-        const change = percentChange(metric.tvlUsd, previous.tvlUsd);
-
-        if (Math.abs(change) >= 1) {
-          const entries = await store.entries();
-          for (const [chatId, subscription] of entries) {
-            if (
-              subscription.protocols.length > 0 &&
-              !subscription.protocols.includes(metric.protocol)
-            ) {
-              continue;
-            }
-
-            if (Math.abs(change) < subscription.threshold) {
-              continue;
-            }
-
-            await bot.sendMessage(chatId, formatMetricLine(metric, change), { parse_mode: "Markdown" });
-          }
-        }
+      if (previous && metric.timestamp !== previous.timestamp) {
+        change = percentChange(metric.price, previous.price);
       }
 
       cache.set(key, metric);
+
+      if (!previous) continue;
+      if (Math.abs(change) < 0.01) continue;
+
+      const entries = await store.entries();
+      for (const [chatId, subscription] of entries) {
+        if (subscription.pairs.length > 0 && !subscription.pairs.includes(metric.pairId)) {
+          continue;
+        }
+
+        if (Math.abs(change) < subscription.threshold) {
+          continue;
+        }
+
+        await bot.sendMessage(chatId, formatMetricLine(metric, change), { parse_mode: "Markdown" });
+      }
     }
   } catch (error) {
     logger.error({ err: error }, "Metrics polling failed");

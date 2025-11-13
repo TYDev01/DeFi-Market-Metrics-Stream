@@ -2,8 +2,8 @@
 
 import { useCallback } from "react";
 import { ArrowDownUp, ArrowUp, ArrowDown } from "lucide-react";
-import { DefiMetric, MetricField } from "@/lib/types";
-import { formatApr, formatUsd } from "@/lib/utils";
+import { PriceMetric, MetricField } from "@/lib/types";
+import { formatDelta, formatPercent, formatPrice } from "@/lib/utils";
 
 export interface SortState {
   column: MetricField;
@@ -11,21 +11,20 @@ export interface SortState {
 }
 
 interface MetricsTableProps {
-  metrics: DefiMetric[];
+  metrics: PriceMetric[];
   sort: SortState;
   onSortChange: (next: SortState) => void;
 }
 
 const HEADERS: Array<{ label: string; field: MetricField; numeric?: boolean }> = [
-  { label: "Protocol", field: "protocol" },
-  { label: "Network", field: "network" },
-  { label: "Pool", field: "poolId" },
-  { label: "Base Token", field: "baseToken" },
-  { label: "Quote Token", field: "quoteToken" },
-  { label: "TVL (USD)", field: "tvlUsd", numeric: true },
-  { label: "Volume 24h (USD)", field: "volume24hUsd", numeric: true },
-  { label: "Fees 24h (USD)", field: "fees24hUsd", numeric: true },
-  { label: "APR (bps)", field: "aprBps", numeric: true }
+  { label: "Pair", field: "pairId" },
+  { label: "Base", field: "baseToken" },
+  { label: "Quote", field: "quoteToken" },
+  { label: "Source", field: "source" },
+  { label: "Price", field: "price", numeric: true },
+  { label: "Δ", field: "priceDelta", numeric: true },
+  { label: "Δ %", field: "priceDeltaPercent", numeric: true },
+  { label: "Updated", field: "timestamp", numeric: true }
 ];
 
 export default function MetricsTable({ metrics, sort, onSortChange }: MetricsTableProps) {
@@ -50,9 +49,9 @@ export default function MetricsTable({ metrics, sort, onSortChange }: MetricsTab
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-soft">
+    <div className="overflow-hidden rounded-2xl border border-white/10 bg-somnia-card/80 text-slate-100 shadow-soft backdrop-blur-xl">
       <table className="min-w-full">
-        <thead className="bg-somnia-muted text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <thead className="bg-somnia-muted text-xs font-semibold uppercase tracking-wide text-slate-300">
           <tr>
             {HEADERS.map((header) => (
               <th
@@ -71,20 +70,29 @@ export default function MetricsTable({ metrics, sort, onSortChange }: MetricsTab
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100 text-sm text-slate-700">
-          {metrics.map((metric) => (
-            <tr key={`${metric.protocol}-${metric.poolId}`}>
-              <td className="px-4 py-3 font-semibold text-slate-900">{metric.protocol}</td>
-              <td className="px-4 py-3">{metric.network}</td>
-              <td className="px-4 py-3">{metric.poolId}</td>
-              <td className="px-4 py-3">{metric.baseToken}</td>
-              <td className="px-4 py-3">{metric.quoteToken}</td>
-              <td className="px-4 py-3 text-right">{formatUsd(metric.tvlUsd)}</td>
-              <td className="px-4 py-3 text-right">{formatUsd(metric.volume24hUsd)}</td>
-              <td className="px-4 py-3 text-right">{formatUsd(metric.fees24hUsd)}</td>
-              <td className="px-4 py-3 text-right text-somnia-primary">{formatApr(metric.aprBps)}</td>
-            </tr>
-          ))}
+        <tbody className="divide-y divide-white/5 text-sm text-slate-200">
+          {metrics.map((metric) => {
+            const updated = new Date(metric.timestamp * 1000).toLocaleTimeString();
+            const changeClass =
+              metric.priceDeltaPercent > 0 ? "text-green-300" : metric.priceDeltaPercent < 0 ? "text-rose-300" : "text-slate-200";
+
+            return (
+              <tr key={metric.pairId}>
+                <td className="px-4 py-3 font-semibold text-white">{metric.pairId}</td>
+                <td className="px-4 py-3">{metric.baseToken}</td>
+                <td className="px-4 py-3">{metric.quoteToken}</td>
+                <td className="px-4 py-3">{metric.source}</td>
+                <td className="px-4 py-3 text-right font-medium text-white">
+                  {formatPrice(metric.price, metric.quoteToken)}
+                </td>
+                <td className="px-4 py-3 text-right">{formatDelta(metric.priceDelta, metric.quoteToken)}</td>
+                <td className={`px-4 py-3 text-right font-semibold ${changeClass}`}>
+                  {formatPercent(metric.priceDeltaPercent)}
+                </td>
+                <td className="px-4 py-3 text-right text-slate-400">{updated}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

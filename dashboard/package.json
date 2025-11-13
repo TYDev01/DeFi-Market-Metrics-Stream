@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@somnia-chain/streams": "^0.9.5",
     "chart.js": "^4.4.4",
     "clsx": "^2.1.0",
     "lucide-react": "^0.381.0",

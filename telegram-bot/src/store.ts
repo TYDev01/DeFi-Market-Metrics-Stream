@@ -2,9 +2,18 @@ import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 export interface Subscription {
-  protocols: string[];
+  pairs: string[];
   threshold: number;
 }
+
+type StoredShape = Record<
+  string,
+  {
+    pairs?: string[];
+    protocols?: string[];
+    threshold?: number;
+  }
+>;
 
 type StoreShape = Record<string, Subscription>;
 
@@ -27,7 +36,21 @@ export class SubscriptionStore {
     if (this.loaded) return;
     await ensureFile();
     const raw = await readFile(filePath, "utf8");
-    this.cache = raw.trim().length ? (JSON.parse(raw) as StoreShape) : {};
+    if (!raw.trim().length) {
+      this.cache = {};
+    } else {
+      const parsed = JSON.parse(raw) as StoredShape;
+      this.cache = Object.entries(parsed).reduce<StoreShape>((acc, [chatId, value]) => {
+        const pairs = Array.isArray(value.pairs)
+          ? value.pairs
+          : Array.isArray(value.protocols)
+            ? value.protocols
+            : [];
+        const threshold = typeof value.threshold === "number" && value.threshold > 0 ? value.threshold : 5;
+        acc[chatId] = { pairs, threshold };
+        return acc;
+      }, {});
+    }
     this.loaded = true;
   }
 

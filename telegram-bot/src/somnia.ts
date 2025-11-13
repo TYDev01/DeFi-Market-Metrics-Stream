@@ -2,15 +2,17 @@ import { createPublicClient, http, decodeAbiParameters, Hex, keccak256, encodePa
 
 export interface SomniaMetric {
   timestamp: number;
-  protocol: string;
-  network: string;
-  poolId: string;
   baseToken: string;
   quoteToken: string;
-  tvlUsd: bigint;
-  volume24hUsd: bigint;
-  fees24hUsd: bigint;
-  aprBps: bigint;
+  pairId: string;
+  source: string;
+  baseAddress: `0x${string}`;
+  quoteAddress: `0x${string}`;
+  price: bigint;
+  priceDelta: bigint;
+  priceDeltaPercent: number;
+  priceFeed: string;
+  decimals: number;
 }
 
 const SOMNIA_STREAM_ABI = [
@@ -29,15 +31,15 @@ const SOMNIA_STREAM_ABI = [
   }
 ] as const;
 
-export function computeDataKey(protocol: string, network: string, poolId: string): Hex {
-  return keccak256(encodePacked(["string", "string", "string"], [protocol, network, poolId]));
+export function computeDataKey(baseAddress: `0x${string}`, quoteAddress: `0x${string}`, pairId: string): Hex {
+  return keccak256(encodePacked(["address", "address", "string"], [baseAddress, quoteAddress, pairId]));
 }
 
 export async function fetchMetricsFromSomnia(
   rpcUrl: string,
   streamAddress: Hex,
   schemaId: Hex,
-  pools: Array<{ protocol: string; network: string; poolId: string }>
+  pairs: Array<{ baseAddress: `0x${string}`; quoteAddress: `0x${string}`; pairId: string }>
 ): Promise<SomniaMetric[]> {
   const client = createPublicClient({
     transport: http(rpcUrl)
@@ -45,57 +47,71 @@ export async function fetchMetricsFromSomnia(
 
   const metrics: SomniaMetric[] = [];
 
-  for (const pool of pools) {
-    const dataKey = computeDataKey(pool.protocol, pool.network, pool.poolId);
+  for (const pair of pairs) {
+    try {
+      const dataKey = computeDataKey(pair.baseAddress, pair.quoteAddress, pair.pairId);
 
-    const [encodedData, timestamp] = await client.readContract({
-      address: streamAddress,
-      abi: SOMNIA_STREAM_ABI,
-      functionName: "get",
-      args: [schemaId, dataKey]
-    }) as unknown as [Hex, bigint];
+      const [encodedData, timestamp] = await client.readContract({
+        address: streamAddress,
+        abi: SOMNIA_STREAM_ABI,
+        functionName: "get",
+        args: [schemaId, dataKey]
+      }) as unknown as [Hex, bigint];
 
-    const decoded = decodeAbiParameters(
-      [
-        { type: "uint64" },
-        { type: "string" },
-        { type: "string" },
-        { type: "string" },
-        { type: "string" },
-        { type: "string" },
-        { type: "uint256" },
-        { type: "uint256" },
-        { type: "uint256" },
-        { type: "int256" }
-      ],
-      encodedData as Hex
-    ) as [bigint, string, string, string, string, string, bigint, bigint, bigint, bigint];
+      if (!encodedData || encodedData === "0x") {
+        continue;
+      }
 
-    const [
-      rawTimestamp,
-      protocol,
-      network,
-      poolId,
-      baseToken,
-      quoteToken,
-      tvlUsd,
-      volume24hUsd,
-      fees24hUsd,
-      aprBps
-    ] = decoded;
+      const decoded = decodeAbiParameters(
+        [
+          { type: "uint64" },
+          { type: "string" },
+          { type: "string" },
+          { type: "string" },
+          { type: "string" },
+          { type: "uint256" },
+          { type: "int256" },
+          { type: "int256" },
+          { type: "address" },
+          { type: "uint8" },
+          { type: "address" },
+          { type: "address" }
+        ],
+        encodedData as Hex
+      ) as [bigint, string, string, string, string, bigint, bigint, bigint, string, bigint, string, string];
 
-    metrics.push({
-      timestamp: Number(rawTimestamp ?? timestamp),
-      protocol,
-      network,
-      poolId,
-      baseToken,
-      quoteToken,
-      tvlUsd,
-      volume24hUsd,
-      fees24hUsd,
-      aprBps
-    });
+      const [
+        rawTimestamp,
+        baseToken,
+        quoteToken,
+        pairId,
+        source,
+        priceRaw,
+        deltaRaw,
+        deltaBpsRaw,
+        priceFeed,
+        decimalsRaw,
+        baseAddress,
+        quoteAddress
+      ] = decoded;
+
+      metrics.push({
+        timestamp: Number(rawTimestamp ?? timestamp),
+        baseToken,
+        quoteToken,
+        pairId,
+        source,
+        price: priceRaw,
+        priceDelta: deltaRaw,
+        priceDeltaPercent: Number(deltaBpsRaw) / 100,
+        priceFeed,
+        decimals: Number(decimalsRaw),
+        baseAddress: baseAddress as `0x${string}`,
+        quoteAddress: quoteAddress as `0x${string}`
+      });
+    } catch (error) {
+      console.error("Somnia pair read failed", pair, error);
+    }
   }
 
   return metrics;

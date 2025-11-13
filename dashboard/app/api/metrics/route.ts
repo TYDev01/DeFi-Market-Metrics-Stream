@@ -84,8 +84,14 @@ async function fetchMetricsFromSomnia(): Promise<PriceMetric[]> {
 
       // Extract values from SDK's decoded structure
       const fields = data[0];
+      
+      // Type guard to ensure fields is an array
+      if (!Array.isArray(fields)) {
+        console.log(`Invalid fields structure for pair ${pair.pairId}`);
+        continue;
+      }
+
       const getValue = (name: string) => {
-        if (!Array.isArray(fields)) return undefined;
         const field = fields.find((f: any) => f.name === name);
         return field?.value?.value;
       };

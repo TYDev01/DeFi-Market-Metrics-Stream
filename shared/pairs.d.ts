@@ -6,6 +6,8 @@ export type PairDefinition = {
   pairId: string;
   source: string;
   feed?: `0x${string}`;
+  network?: string;
+  rpcUrl?: string;
 };
 
 export const TRACKED_PAIRS: PairDefinition[];

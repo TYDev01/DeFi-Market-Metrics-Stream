@@ -84,6 +84,13 @@ async function fetchMetricsFromSomnia(): Promise<PriceMetric[]> {
 
       // Extract values from SDK's decoded structure
       const fields = data[0];
+      
+      // Type guard to ensure fields is an array
+      if (!Array.isArray(fields)) {
+        console.log(`Invalid fields structure for pair ${pair.pairId}`);
+        continue;
+      }
+
       const getValue = (name: string) => {
         const field = fields.find((f: any) => f.name === name);
         return field?.value?.value;
@@ -114,7 +121,7 @@ async function fetchMetricsFromSomnia(): Promise<PriceMetric[]> {
         price: Number(price) / scale,
         priceDelta: Number(delta || 0) / scale,
         priceDeltaPercent: Number(deltaBps || 0) / 100,
-        priceFeed: priceFeed || pair.feed
+        priceFeed: (priceFeed as string) || pair.feed || ''
       });
     } catch (error) {
       console.error(`Failed to fetch data for pair ${pair.pairId}:`, error);

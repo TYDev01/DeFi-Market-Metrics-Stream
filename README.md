@@ -4,12 +4,14 @@ Real-time cryptocurrency price dashboard powered by **Chainlink Data Feeds**, **
 
 ##  Features
 
--  **Real-time Price Data**: Fetches SOMI, ETH, BTC, LINK prices from Chainlink every 10 minutes
--  **Automatic Updates**: Chainlink Automation triggers on-chain updates (or manual cron)
--  **Live Dashboard**: Next.js dashboard with auto-refresh (no dummy data!)
--  **On-chain Storage**: Prices stored in Somnia Data Streams for transparency
+-  **Multi-Pair Support**: Track multiple cryptocurrency pairs (SOM/USDT, ETH/USD, BTC/USD, LINK/USD, etc.)
+-  **Chainlink Integration**: Fetches prices from Chainlink oracle feeds on Somnia network
+-  **Automatic Updates**: Updates prices every 10 minutes via automated scripts or Chainlink Automation
+-  **Live Dashboard**: Next.js dashboard with real-time price display and auto-refresh
+-  **Somnia Data Streams**: All price data stored on-chain using Somnia Data Streams for transparency
 -  **Price Alerts**: Telegram bot integration for threshold-based notifications
 -  **Full History**: Track price changes and percentage movements over time
+-  **Extensible**: Easy to add new trading pairs with Chainlink feeds
 
 ##  Project Structure
 
@@ -58,15 +60,43 @@ Visit `http://localhost:3000` to see your live dashboard!
 ##  How It Works
 
 ```
-Chainlink Price Feeds → MetricsUpdater Contract → Somnia Data Streams → Dashboard API → UI
-     (Every 10min)            (On-chain)              (On-chain)         (Server)   (Browser)
+Chainlink Price Feeds → Update Script → Somnia Data Streams → Dashboard API → UI
+     (Multiple pairs)      (SDK-based)      (On-chain)         (Server)   (Browser)
 ```
 
-1. **Chainlink Automation** calls `performUpkeep()` every 10 minutes
-2. **MetricsUpdater.sol** fetches latest prices from Chainlink oracles (SOMI/USD, ETH/USD, BTC/USD, LINK/USD)
-3. Prices are written to **Somnia Data Streams** with full metadata
-4. **Dashboard API** (`/api/metrics`) reads from Somnia streams every 60 seconds
-5. **Next.js UI** displays real-time prices with auto-refresh
+1. **Update script** fetches prices from multiple Chainlink oracle feeds on Somnia
+2. Prices are encoded and published to **Somnia Data Streams** using the SDK
+3. **Dashboard API** (`/api/metrics`) reads from Somnia streams using SDK
+4. **Next.js UI** displays real-time prices with auto-refresh every 60 seconds
+
+### Currently Supported Pairs
+
+- **SOM/USDT** - $0.366 (Somnia Network - Live)
+- **ETH/USD** - $3,422.20 (Ethereum Mainnet - Live)
+- **BTC/USD** - $101,787.57 (Ethereum Mainnet - Live)
+- **LINK/USD** - $15.23 (Ethereum Mainnet - Live)
+
+All pairs are **ACTIVE** and fetching real-time prices from Chainlink oracles!
+
+##  Adding New Trading Pairs
+
+Want to track more cryptocurrency pairs? See **[ADDING_PAIRS.md](./ADDING_PAIRS.md)** for detailed instructions.
+
+### Quick Steps:
+
+1. **Find Chainlink feed address** for your desired pair on Somnia network
+2. **Update `shared/pairs.js`** with the new pair configuration
+3. **Test the feed**:
+   ```bash
+   node scripts/discoverChainlinkFeeds.js
+   ```
+4. **Update all pairs**:
+   ```bash
+   npx ts-node scripts/updateMultiplePairs.ts
+   ```
+5. **View on dashboard** - all configured pairs display automatically
+
+The system automatically handles multiple pairs - just add the Chainlink feed addresses!
 
 ##  Key Components
 

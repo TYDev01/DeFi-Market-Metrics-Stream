@@ -149,7 +149,7 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
   }, []);
 
   const handleSubscribe = () => {
-    const url = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ?? "https://t.me/+ix5FDQicQ1AxMmUO";
+    const url = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ?? "https://t.me/defi_market_metrics";
     window.open(url, "_blank", "noopener,noreferrer");
   };
 

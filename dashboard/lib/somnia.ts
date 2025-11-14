@@ -128,7 +128,7 @@ export async function getInitialMetrics(): Promise<PriceMetric[]> {
           { type: "address", name: "quoteAddress" }
         ],
         encodedData as Hex
-      ) as [bigint, string, string, string, string, bigint, bigint, bigint, string, bigint, string, string];
+      );
 
       const [
         rawTimestamp,

@@ -71,12 +71,17 @@ Chainlink Price Feeds → Update Script → Somnia Data Streams → Dashboard AP
 
 ### Currently Supported Pairs
 
-- **SOM/USDT** - $0.366 (Somnia Network - Live)
-- **ETH/USD** - $3,422.20 (Ethereum Mainnet - Live)
-- **BTC/USD** - $101,787.57 (Ethereum Mainnet - Live)
-- **LINK/USD** - $15.23 (Ethereum Mainnet - Live)
+- **SOM/USDT** - Somnia Network (Live)
+- **ETH/USD** - Ethereum Mainnet (Live)
+- **BTC/USD** - Ethereum Mainnet (Live)
+- **LINK/USD** - Ethereum Mainnet (Live)
+- **AAVE/USD** - Ethereum Mainnet (Live)
+- **UNI/USD** - Ethereum Mainnet (Live)
+- **MATIC/USD** - Ethereum Mainnet (Live)
+- **SOL/USD** - Ethereum Mainnet (Live)
+- **AVAX/USD** - Ethereum Mainnet (Live)
 
-All pairs are **ACTIVE** and fetching real-time prices from Chainlink oracles!
+All **9 pairs** are configured and ready to fetch real-time prices from Chainlink oracles!
 
 ##  Adding New Trading Pairs
 

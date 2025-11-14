@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import FilterBar from "./filter-bar";
 import MetricsTable, { SortState } from "./metrics-table";
 import MetricsCharts from "./metrics-charts";
+import AddPairModal from "./add-pair-modal";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { FilterState, PriceMetric } from "@/lib/types";
@@ -30,6 +32,7 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
   const [metrics, setMetrics] = useState<PriceMetric[]>(initialMetrics);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAddPairModal, setShowAddPairModal] = useState(false);
 
   // Fetch fresh metrics from API
   const fetchMetrics = async () => {
@@ -148,7 +151,7 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
   }, []);
 
   const handleSubscribe = () => {
-    const url = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ?? "https://t.me/somnia_alerts_bot";
+    const url = process.env.NEXT_PUBLIC_TELEGRAM_BOT_URL ?? "https://t.me/defi_market_metrics";
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -161,12 +164,26 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
   return (
     <div className="space-y-8">
       <section className="rounded-3xl border border-white/10 bg-somnia-card/80 p-8 text-slate-100 shadow-soft backdrop-blur-xl">
-        <span className="text-xs uppercase tracking-[0.2em] text-somnia-primary">Somnia Streams</span>
-        <h1 className="mt-4 text-3xl font-semibold text-white">On-chain price monitors &amp; alerts</h1>
-        <p className="mt-3 max-w-2xl text-sm text-slate-300">
-          Chainlink Automation pushes the latest feed values into Somnia Data Streams every 10 minutes. This dashboard
-          fetches real-time price data directly from on-chain Somnia streams and displays live Chainlink price feeds.
-        </p>
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <Image 
+                src="/logo.png" 
+                alt="Somnia Logo" 
+                width={48} 
+                height={48}
+                className="rounded-lg"
+                priority
+              />
+              <span className="text-xs uppercase tracking-[0.2em] text-somnia-primary">Somnia Streams</span>
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold text-white">On-chain price monitors &amp; alerts</h1>
+            <p className="mt-3 max-w-2xl text-sm text-slate-300">
+              Chainlink Automation pushes the latest feed values into Somnia Data Streams every 10 minutes. This dashboard
+              fetches real-time price data directly from on-chain Somnia streams and displays live Chainlink price feeds.
+            </p>
+          </div>
+        </div>
         {error && (
           <div className="mt-4 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
             <p className="text-sm text-yellow-200">{error}</p>
@@ -174,6 +191,7 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
         )}
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button onClick={handleSubscribe}>Subscribe For Alerts</Button>
+          <Button onClick={() => setShowAddPairModal(true)}>Add Custom Pair</Button>
           <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
             {isLoading ? "Refreshing..." : "Refresh Dashboard"}
           </Button>
@@ -223,6 +241,14 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
       <MetricsCharts metrics={sortedMetrics.slice(0, 6)} />
 
       <MetricsTable metrics={sortedMetrics} sort={sort} onSortChange={setSort} />
+
+      <AddPairModal 
+        isOpen={showAddPairModal}
+        onClose={() => setShowAddPairModal(false)}
+        onSuccess={() => {
+          fetchMetrics();
+        }}
+      />
     </div>
   );
 }

@@ -3,19 +3,49 @@ import { createPublicClient, createWalletClient, http, keccak256, encodeAbiParam
 import { privateKeyToAccount } from "viem/accounts";
 import { SDK, SchemaEncoder } from "@somnia-chain/streams";
 import { PriceMetric } from "@/lib/types";
-import { TRACKED_PAIRS } from "../../../../shared/pairs.js";
+import { TRACKED_PAIRS } from "../../../shared/pairs.js";
+import fs from 'fs';
+import path from 'path';
 
 type HexAddress = `0x${string}`;
 
 type PairEntry = {
   baseToken: string;
   quoteToken: string;
-  baseAddress: string;
-  quoteAddress: string;
+  baseAddress?: string;
+  quoteAddress?: string;
   pairId: string;
   source: string;
   feed: string;
+  network?: string;
+  rpcUrl?: string;
 };
+
+// Load user-submitted pairs
+function loadUserPairs(): PairEntry[] {
+  try {
+    const userPairsPath = path.join(process.cwd(), '../../data/user-pairs.json');
+    if (fs.existsSync(userPairsPath)) {
+      const data = JSON.parse(fs.readFileSync(userPairsPath, 'utf-8'));
+      const pairs = data.pairs || [];
+      // Transform user pairs to match PairEntry format
+      return pairs.map((p: any) => ({
+        baseToken: p.baseToken,
+        quoteToken: p.quoteToken,
+        baseAddress: p.baseAddress || '0x0000000000000000000000000000000000000000',
+        quoteAddress: p.quoteAddress || '0x0000000000000000000000000000000000000000',
+        pairId: p.pairId,
+        source: 'Community',
+        feed: p.feed,
+        network: p.network,
+        rpcUrl: p.rpcUrl
+      }));
+    }
+  } catch (error) {
+    console.error('Error loading user pairs:', error);
+  }
+  return [];
+}
 
 // Schema matching the price data structure
 const PRICE_SCHEMA = "uint64 timestamp, string baseSymbol, string quoteSymbol, string pairId, string source, uint256 price, int256 delta, int256 deltaBps, address priceFeed, uint8 feedDecimals, address baseToken, address quoteToken";
@@ -56,7 +86,11 @@ async function fetchMetricsFromSomnia(): Promise<PriceMetric[]> {
   }
 
   const metrics: PriceMetric[] = [];
-  const pairs = TRACKED_PAIRS as PairEntry[];
+  // Combine default tracked pairs with user-submitted pairs
+  const userPairs = loadUserPairs();
+  const pairs = [...TRACKED_PAIRS, ...userPairs] as PairEntry[];
+  
+  console.log(`Fetching metrics for ${TRACKED_PAIRS.length} default pairs and ${userPairs.length} user-submitted pairs...`);
 
   for (const pair of pairs) {
     try {

@@ -78,7 +78,7 @@ export async function fetchMetricsFromSomnia(
           { type: "address" }
         ],
         encodedData as Hex
-      ) as [bigint, string, string, string, string, bigint, bigint, bigint, string, bigint, string, string];
+      );
 
       const [
         rawTimestamp,

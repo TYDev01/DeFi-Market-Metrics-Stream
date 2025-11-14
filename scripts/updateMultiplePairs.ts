@@ -4,6 +4,22 @@ import { createPublicClient, createWalletClient, defineChain, http, encodeAbiPar
 import { privateKeyToAccount } from "viem/accounts";
 import { SDK, SchemaEncoder } from "@somnia-chain/streams";
 import { TRACKED_PAIRS } from '../shared/pairs.js';
+import fs from 'fs';
+import path from 'path';
+
+// Load user-submitted pairs
+function loadUserPairs() {
+  try {
+    const userPairsPath = path.join(process.cwd(), '../data/user-pairs.json');
+    if (fs.existsSync(userPairsPath)) {
+      const data = JSON.parse(fs.readFileSync(userPairsPath, 'utf-8'));
+      return data.pairs || [];
+    }
+  } catch (error) {
+    console.error('Error loading user pairs:', error);
+  }
+  return [];
+}
 
 const rpcUrl = process.env.SOMNIA_RPC_URL!;
 const privateKey = process.env.PRIVATE_KEY!;
@@ -65,8 +81,13 @@ async function updateMultiplePairs() {
   const dataToPublish = [];
   const timestamp = BigInt(Math.floor(Date.now() / 1000));
 
+  // Combine default pairs and user pairs
+  const userPairs = loadUserPairs();
+  const allPairs = [...TRACKED_PAIRS, ...userPairs];
+  console.log(`Processing ${TRACKED_PAIRS.length} default pairs and ${userPairs.length} user-submitted pairs...\n`);
+
   // Process each pair
-  for (const pair of TRACKED_PAIRS) {
+  for (const pair of allPairs) {
     console.log(`Processing ${pair.pairId}...`);
     console.log(`  Network: ${pair.network}`);
     console.log(`  Feed: ${pair.feed}`);
@@ -110,23 +131,7 @@ async function updateMultiplePairs() {
       console.log(`  Decimals: ${decimals}`);
       console.log(`  Age: ${Math.floor(age / 60)} minutes`);
 
-      // Encode data for this pair
-      const encodedData = schemaEncoder.encodeData([
-        { name: "timestamp", value: timestamp.toString(), type: "uint64" },
-        { name: "baseSymbol", value: pair.baseToken, type: "string" },
-        { name: "quoteSymbol", value: pair.quoteToken, type: "string" },
-        { name: "pairId", value: pair.pairId, type: "string" },
-        { name: "source", value: pair.source, type: "string" },
-        { name: "price", value: price.toString(), type: "uint256" },
-        { name: "delta", value: "0", type: "int256" },
-        { name: "deltaBps", value: "0", type: "int256" },
-        { name: "priceFeed", value: pair.feed as string, type: "address" },
-        { name: "feedDecimals", value: decimals.toString(), type: "uint8" },
-        { name: "baseToken", value: pair.baseAddress as string, type: "address" },
-        { name: "quoteToken", value: pair.quoteAddress as string, type: "address" }
-      ]);
-
-      // Compute data key (unique identifier for this pair)
+      // Calculate data key to fetch previous price
       const dataKey = keccak256(
         encodeAbiParameters(
           parseAbiParameters('address, address, string'),
@@ -138,6 +143,58 @@ async function updateMultiplePairs() {
         )
       );
 
+      // Fetch previous price from Somnia Streams to calculate delta
+      let delta = BigInt(0);
+      let deltaBps = BigInt(0);
+      
+      try {
+        const previousData = await sdk.streams.getByKey(
+          schemaId!,
+          account.address,
+          dataKey
+        );
+
+        if (previousData && Array.isArray(previousData) && previousData.length > 0) {
+          const fields = previousData[0];
+          if (Array.isArray(fields)) {
+            const prevPriceField = fields.find((f: any) => f.name === 'price');
+            if (prevPriceField?.value?.value) {
+              const previousPrice = BigInt(prevPriceField.value.value);
+              delta = price - previousPrice;
+              
+              // Calculate basis points (0.01% = 1 bp)
+              if (previousPrice > 0) {
+                deltaBps = (delta * BigInt(10000)) / previousPrice;
+              }
+              
+              const deltaFormatted = (Number(delta) / Math.pow(10, Number(decimals))).toFixed(8);
+              const deltaBpsFormatted = (Number(deltaBps) / 100).toFixed(2);
+              console.log(`  Change: ${delta >= 0 ? '+' : ''}${deltaFormatted} (${delta >= 0 ? '+' : ''}${deltaBpsFormatted}%)`);
+            }
+          }
+        }
+      } catch (error: any) {
+        // First time publishing this pair, delta will be 0
+        console.log(`  Change: No previous data (first update)`);
+      }
+
+      // Encode data for this pair
+      const encodedData = schemaEncoder.encodeData([
+        { name: "timestamp", value: timestamp.toString(), type: "uint64" },
+        { name: "baseSymbol", value: pair.baseToken, type: "string" },
+        { name: "quoteSymbol", value: pair.quoteToken, type: "string" },
+        { name: "pairId", value: pair.pairId, type: "string" },
+        { name: "source", value: pair.source, type: "string" },
+        { name: "price", value: price.toString(), type: "uint256" },
+        { name: "delta", value: delta.toString(), type: "int256" },
+        { name: "deltaBps", value: deltaBps.toString(), type: "int256" },
+        { name: "priceFeed", value: pair.feed as string, type: "address" },
+        { name: "feedDecimals", value: decimals.toString(), type: "uint8" },
+        { name: "baseToken", value: pair.baseAddress as string, type: "address" },
+        { name: "quoteToken", value: pair.quoteAddress as string, type: "address" }
+      ]);
+
+      // Use the dataKey we already calculated above
       dataToPublish.push({
         id: dataKey,
         schemaId: schemaId!,

@@ -2,6 +2,9 @@
 
 import MetricsDashboard from "@/components/metrics-dashboard";
 
+// Force dynamic rendering to skip build-time prerendering and SSG
+export const dynamic = 'force-dynamic';
+
 export default function Home() {
   // Metrics are fetched client-side by the dashboard component via /api/metrics.
   return (

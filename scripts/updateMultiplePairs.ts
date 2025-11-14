@@ -4,6 +4,22 @@ import { createPublicClient, createWalletClient, defineChain, http, encodeAbiPar
 import { privateKeyToAccount } from "viem/accounts";
 import { SDK, SchemaEncoder } from "@somnia-chain/streams";
 import { TRACKED_PAIRS } from '../shared/pairs.js';
+import fs from 'fs';
+import path from 'path';
+
+// Load user-submitted pairs
+function loadUserPairs() {
+  try {
+    const userPairsPath = path.join(process.cwd(), '../data/user-pairs.json');
+    if (fs.existsSync(userPairsPath)) {
+      const data = JSON.parse(fs.readFileSync(userPairsPath, 'utf-8'));
+      return data.pairs || [];
+    }
+  } catch (error) {
+    console.error('Error loading user pairs:', error);
+  }
+  return [];
+}
 
 const rpcUrl = process.env.SOMNIA_RPC_URL!;
 const privateKey = process.env.PRIVATE_KEY!;
@@ -65,8 +81,13 @@ async function updateMultiplePairs() {
   const dataToPublish = [];
   const timestamp = BigInt(Math.floor(Date.now() / 1000));
 
+  // Combine default pairs and user pairs
+  const userPairs = loadUserPairs();
+  const allPairs = [...TRACKED_PAIRS, ...userPairs];
+  console.log(`Processing ${TRACKED_PAIRS.length} default pairs and ${userPairs.length} user-submitted pairs...\n`);
+
   // Process each pair
-  for (const pair of TRACKED_PAIRS) {
+  for (const pair of allPairs) {
     console.log(`Processing ${pair.pairId}...`);
     console.log(`  Network: ${pair.network}`);
     console.log(`  Feed: ${pair.feed}`);

@@ -1,24 +1,32 @@
 import "dotenv/config";
 import TelegramBot from "node-telegram-bot-api";
 import pino from "pino";
-import { Hex } from "viem";
-import { fetchMetricsFromSomnia, SomniaMetric } from "./somnia.js";
 import { SubscriptionStore, Subscription } from "./store.js";
 import { TRACKED_PAIRS } from "../../shared/pairs.js";
 
 const logger = pino({ level: process.env.LOG_LEVEL ?? "info" });
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const rpcUrl = process.env.SOMNIA_RPC_URL;
-const streamAddress = process.env.SOMNIA_STREAM_ADDRESS as Hex | undefined;
-const schemaId = process.env.SOMNIA_SCHEMA_ID as Hex | undefined;
+const channelId = process.env.CHANNEL_ID;
+const apiUrl = process.env.API_URL ?? "https://de-fi-market-metrics-stream.vercel.app/api/metrics";
 
 if (!token) {
   throw new Error("TELEGRAM_BOT_TOKEN is required");
 }
 
-if (!rpcUrl || !streamAddress || !schemaId) {
-  logger.warn("Somnia environment variables missing, bot will operate in dry-run mode.");
+if (!channelId) {
+  logger.warn("CHANNEL_ID not set. Bot will only send to individual subscribers.");
+}
+
+interface SomniaMetric {
+  timestamp: number;
+  baseToken: string;
+  quoteToken: string;
+  pairId: string;
+  source: string;
+  price: number;
+  priceDelta: number;
+  priceDeltaPercent: number;
 }
 
 type MetricCache = Map<string, SomniaMetric>;
@@ -39,32 +47,22 @@ bot.setMyCommands([
   { command: "stop", description: "Unsubscribe from updates" }
 ]);
 
-function formatDecimal(value: bigint, decimals: number): number {
-  if (decimals <= 0) return Number(value);
-  const safeDecimals = Math.min(decimals, 18);
-  const scale = Number(10n ** BigInt(safeDecimals));
-  return Number(value) / scale;
+function formatPrice(amount: number, quoteToken: string): string {
+  const fractionDigits = amount >= 1 ? 2 : 6;
+  return `${amount.toLocaleString(undefined, { maximumFractionDigits: fractionDigits })} ${quoteToken}`;
 }
 
-function formatPrice(amount: bigint, decimals: number, quoteToken: string): string {
-  const numeric = formatDecimal(amount, decimals);
-  const fractionDigits = numeric >= 1 ? 4 : 6;
-  return `${numeric.toLocaleString(undefined, { maximumFractionDigits: fractionDigits })} ${quoteToken}`;
-}
-
-function formatDelta(amount: bigint, decimals: number, quoteToken: string): string {
-  const numeric = formatDecimal(amount, decimals);
-  const sign = numeric >= 0 ? "+" : "-";
-  const absValue = Math.abs(numeric);
-  const fractionDigits = absValue >= 1 ? 4 : 6;
+function formatDelta(amount: number, quoteToken: string): string {
+  const sign = amount >= 0 ? "+" : "-";
+  const absValue = Math.abs(amount);
+  const fractionDigits = absValue >= 1 ? 2 : 6;
   return `${sign}${absValue.toLocaleString(undefined, { maximumFractionDigits: fractionDigits })} ${quoteToken}`;
 }
 
-function percentChange(current: bigint, previous: bigint): number {
-  if (previous === 0n) return 0;
-  const diff = Number(current) - Number(previous);
-  const base = Number(previous);
-  return (diff / base) * 100;
+function percentChange(current: number, previous: number): number {
+  if (previous === 0) return 0;
+  const diff = current - previous;
+  return (diff / previous) * 100;
 }
 
 function formatMetricLine(metric: SomniaMetric, changePercent: number) {
@@ -73,8 +71,8 @@ function formatMetricLine(metric: SomniaMetric, changePercent: number) {
 
   return [
     ` *${metric.pairId}* (${metric.source})`,
-    `Change: *${changeText}* (${formatDelta(metric.priceDelta, metric.decimals, metric.quoteToken)})`,
-    `Price: ${formatPrice(metric.price, metric.decimals, metric.quoteToken)}`,
+    `Change: *${changeText}* (${formatDelta(metric.priceDelta, metric.quoteToken)})`,
+    `Price: ${formatPrice(metric.price, metric.quoteToken)}`,
     `Updated at: ${new Date(metric.timestamp * 1000).toLocaleTimeString()}`
   ].join("\n");
 }
@@ -174,14 +172,107 @@ bot.onText(/\/stop/, async (msg) => {
   await bot.sendMessage(chatId, "Unsubscribed. Use /start to join again.");
 });
 
-async function pollAndNotify() {
-  if (!rpcUrl || !streamAddress || !schemaId || !trackedPairs.length) {
+async function fetchMetricsFromAPI(): Promise<SomniaMetric[]> {
+  const response = await fetch(apiUrl);
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.statusText}`);
+  }
+  const data = await response.json();
+  return data.metrics || [];
+}
+
+async function sendChannelUpdate() {
+  if (!channelId || !trackedPairs.length) {
     return;
   }
 
   try {
-    const metrics = await fetchMetricsFromSomnia(rpcUrl, streamAddress, schemaId, trackedPairs);
-    logger.info({ count: metrics.length }, "Fetched Somnia metrics");
+    const metrics = await fetchMetricsFromAPI();
+    logger.info({ count: metrics.length }, "Fetched metrics for channel update");
+
+    if (metrics.length === 0) {
+      return;
+    }
+
+    // Get current time
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const date = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    // Build a beautiful market update message
+    let message = `╔═══════════════════════╗\n`;
+    message += `║   📊 *MARKET UPDATE*   ║\n`;
+    message += `╚═══════════════════════╝\n\n`;
+    message += `🕐 ${time} • 📅 ${date}\n`;
+    message += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    // Separate gains and losses
+    const gains = metrics.filter(m => m.priceDeltaPercent > 0).sort((a, b) => b.priceDeltaPercent - a.priceDeltaPercent);
+    const losses = metrics.filter(m => m.priceDeltaPercent < 0).sort((a, b) => a.priceDeltaPercent - b.priceDeltaPercent);
+    const neutral = metrics.filter(m => m.priceDeltaPercent === 0);
+
+    // Top gainers
+    if (gains.length > 0) {
+      message += `🟢 *TOP GAINERS*\n`;
+      for (const metric of gains) {
+        const priceFormatted = formatPrice(metric.price, metric.quoteToken);
+        const changeText = `+${metric.priceDeltaPercent.toFixed(2)}%`;
+        const emoji = metric.priceDeltaPercent >= 5 ? '🚀' : metric.priceDeltaPercent >= 2 ? '📈' : '↗️';
+        message += `${emoji} *${metric.pairId}* → \`${priceFormatted}\` (${changeText})\n`;
+      }
+      message += `\n`;
+    }
+
+    // Top losers
+    if (losses.length > 0) {
+      message += `🔴 *TOP LOSERS*\n`;
+      for (const metric of losses) {
+        const priceFormatted = formatPrice(metric.price, metric.quoteToken);
+        const changeText = `${metric.priceDeltaPercent.toFixed(2)}%`;
+        const emoji = metric.priceDeltaPercent <= -5 ? '💥' : metric.priceDeltaPercent <= -2 ? '📉' : '↘️';
+        message += `${emoji} *${metric.pairId}* → \`${priceFormatted}\` (${changeText})\n`;
+      }
+      message += `\n`;
+    }
+
+    // Neutral (no change)
+    if (neutral.length > 0) {
+      message += `⚪️ *STABLE*\n`;
+      for (const metric of neutral) {
+        const priceFormatted = formatPrice(metric.price, metric.quoteToken);
+        message += `━ *${metric.pairId}* → \`${priceFormatted}\` (0.00%)\n`;
+      }
+      message += `\n`;
+    }
+
+    // Summary statistics
+    const totalChange = metrics.reduce((sum, m) => sum + Math.abs(m.priceDeltaPercent), 0);
+    const avgChange = (totalChange / metrics.length).toFixed(2);
+    const biggestMover = [...metrics].sort((a, b) => Math.abs(b.priceDeltaPercent) - Math.abs(a.priceDeltaPercent))[0];
+    
+    message += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `📊 *Market Stats*\n`;
+    message += `• Avg Movement: ${avgChange}%\n`;
+    message += `• Biggest Mover: ${biggestMover.pairId} (${Math.abs(biggestMover.priceDeltaPercent).toFixed(2)}%)\n`;
+    message += `• Gainers: ${gains.length} | Losers: ${losses.length}\n\n`;
+    message += `⏰ _Next update in 10 minutes_\n`;
+    message += `🔗 [View Dashboard](https://de-fi-market-metrics-stream.vercel.app)`;
+
+    await bot.sendMessage(channelId, message, { parse_mode: "Markdown", disable_web_page_preview: true });
+    logger.info("Market update sent to channel");
+  } catch (error) {
+    logger.error({ err: error }, "Failed to send channel update");
+  }
+}
+
+async function pollAndNotify() {
+  if (!trackedPairs.length) {
+    return;
+  }
+
+  try {
+    const metrics = await fetchMetricsFromAPI();
+    logger.info({ count: metrics.length }, "Fetched metrics from API");
 
     for (const metric of metrics) {
       const key = metric.pairId;
@@ -195,8 +286,8 @@ async function pollAndNotify() {
       cache.set(key, metric);
 
       if (!previous) continue;
-      if (Math.abs(change) < 0.01) continue;
 
+      // Send to individual subscribers based on their threshold
       const entries = await store.entries();
       for (const [chatId, subscription] of entries) {
         if (subscription.pairs.length > 0 && !subscription.pairs.includes(metric.pairId)) {
@@ -207,7 +298,12 @@ async function pollAndNotify() {
           continue;
         }
 
-        await bot.sendMessage(chatId, formatMetricLine(metric, change), { parse_mode: "Markdown" });
+        try {
+          await bot.sendMessage(chatId, formatMetricLine(metric, change), { parse_mode: "Markdown" });
+          logger.info({ chatId, pairId: metric.pairId, change }, "Alert sent to subscriber");
+        } catch (error) {
+          logger.error({ err: error, chatId }, "Failed to send message to subscriber");
+        }
       }
     }
   } catch (error) {
@@ -215,7 +311,13 @@ async function pollAndNotify() {
   }
 }
 
+// Send channel updates every 10 minutes (600000ms)
+const CHANNEL_UPDATE_INTERVAL = 600_000;
+setInterval(sendChannelUpdate, CHANNEL_UPDATE_INTERVAL);
+sendChannelUpdate().catch((error) => logger.error({ err: error }, "Initial channel update failed"));
+
+// Poll for individual subscriber alerts every 5 minutes
 setInterval(pollAndNotify, Number(process.env.POLL_INTERVAL_MS ?? 300_000));
 pollAndNotify().catch((error) => logger.error({ err: error }, "Initial poll failed"));
 
-logger.info("Somnia Telegram bot started.");
+logger.info("Somnia Telegram bot started with 10-minute channel updates.");

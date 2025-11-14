@@ -6,6 +6,7 @@ import Image from "next/image";
 import FilterBar from "./filter-bar";
 import MetricsTable, { SortState } from "./metrics-table";
 import MetricsCharts from "./metrics-charts";
+import AddPairModal from "./add-pair-modal";
 import { Button } from "./ui/button";
 import { Card, CardContent } from "./ui/card";
 import { FilterState, PriceMetric } from "@/lib/types";
@@ -31,6 +32,7 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
   const [metrics, setMetrics] = useState<PriceMetric[]>(initialMetrics);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAddPairModal, setShowAddPairModal] = useState(false);
 
   // Fetch fresh metrics from API
   const fetchMetrics = async () => {
@@ -189,6 +191,7 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
         )}
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button onClick={handleSubscribe}>Subscribe For Alerts</Button>
+          <Button onClick={() => setShowAddPairModal(true)}>Add Custom Pair</Button>
           <Button variant="outline" onClick={handleRefresh} disabled={isLoading}>
             {isLoading ? "Refreshing..." : "Refresh Dashboard"}
           </Button>
@@ -238,6 +241,14 @@ export default function MetricsDashboard({ initialMetrics }: MetricsDashboardPro
       <MetricsCharts metrics={sortedMetrics.slice(0, 6)} />
 
       <MetricsTable metrics={sortedMetrics} sort={sort} onSortChange={setSort} />
+
+      <AddPairModal 
+        isOpen={showAddPairModal}
+        onClose={() => setShowAddPairModal(false)}
+        onSuccess={() => {
+          fetchMetrics();
+        }}
+      />
     </div>
   );
 }

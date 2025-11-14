@@ -3,7 +3,7 @@ import { createPublicClient, createWalletClient, http, keccak256, encodeAbiParam
 import { privateKeyToAccount } from "viem/accounts";
 import { SDK, SchemaEncoder } from "@somnia-chain/streams";
 import { PriceMetric } from "@/lib/types";
-import { TRACKED_PAIRS } from "../../../../shared/pairs.js";
+import { TRACKED_PAIRS } from "../../../shared/pairs.js";
 import fs from 'fs';
 import path from 'path';
 
